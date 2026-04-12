@@ -1,0 +1,17 @@
+# Secrets
+.env
+.env.*
+local.settings.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Node
+node_modules/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
