@@ -2,6 +2,7 @@
 .env
 .env.*
 local.settings.json
+**/local.settings.json
 
 # Python
 __pycache__/
@@ -10,8 +11,13 @@ __pycache__/
 
 # Node
 node_modules/
+dO-frontend/node_modules/
 dist/
+dO-frontend/dist/
 
 # OS
 .DS_Store
 Thumbs.db
+
+# VSCode
+.vscode/

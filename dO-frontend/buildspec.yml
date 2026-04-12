@@ -1,0 +1,22 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+  pre_build:
+    commands:
+      - echo Installing source NPM dependencies...
+      - export NODE_OPTIONS='--max-old-space-size=8192'
+      - yarn
+  build:
+    commands:
+      - echo Build started on `date`
+      - yarn run build
+  post_build:
+    commands:
+      - echo S3 Copy Started
+      - aws s3 sync ./dist/ s3://data-orch-react-application-v1
+      - echo S3 Copy Completed
+      - echo Build completed on `date`
+      - echo Done
