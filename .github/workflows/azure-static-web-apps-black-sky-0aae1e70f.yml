@@ -23,12 +23,10 @@ jobs:
         with:
           node-version: 18
 
-      - name: Install dependencies
-        run: npm ci
-        working-directory: dO-frontend
-
-      - name: Build
-        run: npm run build
+      - name: Install and Build
+        run: |
+          npm ci
+          npm run build
         working-directory: dO-frontend
         env:
           VITE_AZURE_FUNCTIONS_URL: https://dataocrhfunapp-g6ekg0bvhqfycma2.eastus-01.azurewebsites.net/api
