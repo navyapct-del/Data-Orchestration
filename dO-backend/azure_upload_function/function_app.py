@@ -276,15 +276,39 @@ def upload(req: func.HttpRequest) -> func.HttpResponse:
                                      status_code=400, mimetype="application/json")
 
         # ── File type validation ───────────────────────────────────────────
-        ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "application/pdf", "text/csv"}
-        ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "pdf", "csv"}
+        ALLOWED_MIME_TYPES = {
+            # Images
+            "image/jpeg", "image/png", "image/gif", "image/svg+xml", "image/webp",
+            # PDF
+            "application/pdf",
+            # CSV — browsers report different MIME types
+            "text/csv", "application/csv", "text/plain",
+            # Excel
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            # Word
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            # Generic binary (some browsers send this for xlsx/docx)
+            "application/octet-stream",
+            "application/zip",
+        }
+        ALLOWED_EXTENSIONS = {
+            "jpg", "jpeg", "png", "gif", "svg", "webp",
+            "pdf",
+            "csv",
+            "xls", "xlsx",
+            "doc", "docx",
+            "txt",
+        }
 
         content_type = (file.content_type or "").lower().split(";")[0].strip()
         file_ext     = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
-        if content_type not in ALLOWED_MIME_TYPES and file_ext not in ALLOWED_EXTENSIONS:
+        # Validate by extension first (more reliable than MIME type)
+        if file_ext not in ALLOWED_EXTENSIONS and content_type not in ALLOWED_MIME_TYPES:
             return func.HttpResponse(
-                json.dumps({"error": "Unsupported file type. Allowed: jpg, jpeg, png, pdf, csv."}),
+                json.dumps({"error": f"Unsupported file type '.{file_ext}'. Allowed: jpg, jpeg, png, pdf, csv, xls, xlsx, doc, docx, txt."}),
                 status_code=400, mimetype="application/json")
 
         # ── Temp upload validation ─────────────────────────────────────────

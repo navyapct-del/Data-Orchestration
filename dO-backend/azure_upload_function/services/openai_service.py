@@ -236,10 +236,7 @@ JSON response:"""
                 except Exception:
                     pass
 
-        # Fallback: wrap plain text in standard envelope (never wrap JSON strings)
-        if raw.strip().startswith("{") or raw.strip().startswith("["):
-            # Raw is JSON but couldn't be parsed cleanly — return as text with note
-            return {"type": "text", "answer": "I found data but couldn't format it properly. Please try rephrasing your question."}
+        # Fallback: return as plain text answer
         return {"type": "text", "answer": raw}
 
     except Exception as exc:
