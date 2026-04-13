@@ -58,7 +58,7 @@ def health(req: func.HttpRequest) -> func.HttpResponse:
 # Intent detection
 # ---------------------------------------------------------------------------
 
-_CHART_KW = {"plot", "graph", "chart", "trend", "visualize", "growth"}
+_CHART_KW = {"plot", "graph", "chart", "trend", "visualize", "growth", "pie", "bar chart", "line chart", "pie chart", "show as chart", "show as graph"}
 _TABLE_KW = {"compare", "comparison", "difference", "versus", " vs ", "year-wise",
              "yearwise", "state-wise", "breakdown", "statewise"}
 
@@ -708,13 +708,29 @@ def query(req: func.HttpRequest) -> func.HttpResponse:
                 status_code=200, mimetype="application/json")
 
         if resp_type == "chart":
-            # Normalise: support both new row-based format and legacy labels/values
+            # Support both shapes:
+            # New: { labels: [...], values: [...] }
+            # Legacy: { data: [{xKey: label, yKey: value}, ...] }
+            labels = result.get("labels", [])
+            values = result.get("values", [])
             raw_data = result.get("data")
+
+            if labels and values:
+                # New flat shape — pass directly to frontend
+                return func.HttpResponse(
+                    json.dumps({
+                        "type":       "chart",
+                        "chart_type": result.get("chart_type", "bar"),
+                        "labels":     labels,
+                        "values":     values,
+                        "answer":     result.get("answer", ""),
+                        "query":      user_query,
+                        "sources":    sources,
+                    }),
+                    status_code=200, mimetype="application/json")
+
             if not raw_data:
-                labels = result.get("labels", [])
-                values = result.get("values", [])
                 if labels and values:
-                    # Convert legacy format → row-based
                     raw_data = [{"label": l, "value": v} for l, v in zip(labels, values)]
 
             if raw_data and len(raw_data) > 0:
@@ -733,7 +749,7 @@ def query(req: func.HttpRequest) -> func.HttpResponse:
                     "answer": result.get("answer", ""),
                     "data":   raw_data,
                     "chart_config": {
-                        "type":     "bar",
+                        "type":     result.get("chart_type", "bar"),
                         "xKey":     x_key,
                         "series":   series,
                         "dualAxis": False,

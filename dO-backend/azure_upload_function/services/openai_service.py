@@ -151,30 +151,50 @@ def generate_rag_answer(query: str, docs: list[dict]) -> dict:
         else:
             text = (doc.get("content") or doc.get("text") or doc.get("extracted_text") or "").strip()
 
-        text = text[:3000]   # increased from 800 — gives Llama enough rows to count/list
+        text = text[:6000]   # increased — gives LLM enough content to count/extract data for charts
         if text:
             context_parts.append(f"[Doc {i}: {doc.get('filename', f'Doc {i}')}]\n{text}")
 
     if not context_parts:
         return {"type": "text", "answer": "No relevant documents found."}
 
-    context = ("\n\n".join(context_parts))[:6000]   # increased from 1500
+    context = ("\n\n".join(context_parts))[:10000]   # increased to give LLM full document context for counting/extraction
 
-    safe_prompt = f"""You are a precise assistant. Answer the question using ONLY the most relevant information from the documents below.
+    safe_prompt = f"""You are a precise data analyst assistant. Answer the question using ONLY the documents below.
 
-Rules:
-- Keep the answer concise: 3-5 lines maximum
-- Answer ONLY what is asked — do not add generic explanations
-- If the documents do not contain a direct answer, say: "The documents do not contain specific information about this."
-- Respond with ONLY valid JSON — no markdown, no plain text:
-  - Text answer  → {{"type":"text","answer":"..."}}
-  - Table answer → {{"type":"table","columns":[...],"rows":[{{...}}]}}
-  - Chart answer → {{"type":"chart","data":[{{"<xKey>":"<label>","<yKey>":<number>}},...]}}
+CRITICAL RULES:
+1. If the question asks for a chart, graph, plot, or visualization — you MUST return type "chart" with extracted data.
+2. If the question asks to compare, count, or show numbers — extract ALL relevant numbers from the documents.
+3. If the question asks for a table or list — return type "table".
+4. For text questions — return type "text".
+5. NEVER say "The documents do not contain specific information" for chart/count/compare queries — always extract what you can find.
+6. Respond with ONLY valid JSON — no markdown, no plain text outside JSON.
+
+RESPONSE FORMATS:
+- Text answer  → {{"type":"text","answer":"..."}}
+- Table answer → {{"type":"table","columns":[...],"rows":[{{...}}],"answer":"..."}}
+- Chart answer → {{"type":"chart","chart_type":"bar","labels":["Label1","Label2"],"values":[10,20],"answer":"..."}}
+
+CHART EXTRACTION RULES:
+- For "plot X vs Y" or "compare X and Y" → extract counts/numbers for each category and return as chart
+- For "how many X" → count occurrences and return as chart if multiple categories exist
+- For "distribution of X" → extract all categories with their counts
+- chart_type: use "pie" if user says "pie chart", "line" if trend over time, otherwise "bar"
+- labels: array of category names (strings)
+- values: array of corresponding numbers (integers or floats)
+
+EXTRACTION APPROACH FOR PDFs:
+- Read through the document text carefully
+- Count items, sections, principles, guidelines, regulations, categories etc.
+- If you find a list of items, count them and use as chart data
+- If you find numbered sections, use section names as labels and counts as values
 
 Documents:
 {context}
 
-Question: {query}"""
+Question: {query}
+
+JSON response:"""
 
     deployment = _deployment()
     logging.info("Using model: %s | Prompt length: %d", deployment, len(safe_prompt))
@@ -184,7 +204,7 @@ Question: {query}"""
             model    = deployment,
             messages = [{"role": "user", "content": safe_prompt.strip()}],
             temperature = 0.1,
-            max_tokens  = 600,
+            max_tokens  = 1200,   # increased for chart data with multiple labels/values
         )
         raw = resp.choices[0].message.content.strip()
         # Strip markdown code fences if model wraps in ```json
