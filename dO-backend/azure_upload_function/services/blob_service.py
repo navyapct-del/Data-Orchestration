@@ -61,6 +61,7 @@ from services.config import require_env
 
 
 CONTAINER_NAME          = "documents"
+IMAGES_CONTAINER_NAME   = "images"       # stores image files (jpg, jpeg, png)
 METADATA_CONTAINER_NAME = "metadata"   # stores text + structured_data JSON blobs
 
 
@@ -69,6 +70,7 @@ class BlobService:
         conn_str     = require_env("AZURE_STORAGE_CONNECTION_STRING")
         self._client = BlobServiceClient.from_connection_string(conn_str)
         self._ensure_container(CONTAINER_NAME)
+        self._ensure_container(IMAGES_CONTAINER_NAME)
         self._ensure_container(METADATA_CONTAINER_NAME)
 
     def _ensure_container(self, name: str):
@@ -82,18 +84,25 @@ class BlobService:
     def upload(self, filename: str, data: bytes, content_type: str, blob_name: str = "") -> str:
         """Upload raw file bytes → returns blob URL.
         
+        Images (jpg/jpeg/png) are stored in the 'images' container.
+        All other files go to the 'documents' container.
         If blob_name is provided, it is used as-is (for temp uploads with custom prefix).
         Otherwise, a UUID prefix is prepended to filename to prevent collisions.
         """
+        # Route images to the images container
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        is_image = ext in {"jpg", "jpeg", "png"} or content_type in {"image/jpeg", "image/png"}
+        container = IMAGES_CONTAINER_NAME if is_image else CONTAINER_NAME
+
         if not blob_name:
             blob_name = f"{uuid.uuid4().hex}_{filename}"
-        blob_client = self._client.get_blob_client(container=CONTAINER_NAME, blob=blob_name)
+        blob_client = self._client.get_blob_client(container=container, blob=blob_name)
         blob_client.upload_blob(
             data,
             overwrite=True,
             content_settings=ContentSettings(content_type=content_type),
         )
-        logging.info("Uploaded file blob: %s", blob_name)
+        logging.info("Uploaded file blob to '%s': %s", container, blob_name)
         return blob_client.url
 
     def upload_text(self, doc_id: str, text: str) -> str:

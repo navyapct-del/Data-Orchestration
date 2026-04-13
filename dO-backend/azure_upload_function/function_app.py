@@ -360,14 +360,21 @@ def upload(req: func.HttpRequest) -> func.HttpResponse:
             summary = ""
 
         # generate_tags with error handling (Task 9.3)
+        # Always generate AI tags; merge with any user-provided tags
         try:
-            tags_str = tags_input or generate_tags(text)
-            if not tags_str:
+            ai_tags_str = generate_tags(text)
+            if not ai_tags_str:
                 logging.warning("generate_tags returned empty for '%s'", filename)
-                tags_str = ""
+                ai_tags_str = ""
         except Exception as tag_exc:
             logging.warning("generate_tags failed for '%s': %s — storing empty tags", filename, tag_exc)
-            tags_str = ""
+            ai_tags_str = ""
+
+        # Merge user-provided tags with AI-generated tags (deduplicated)
+        user_tags = [t.strip() for t in tags_input.split(",") if t.strip()]
+        ai_tags   = [t.strip() for t in ai_tags_str.split(",") if t.strip()]
+        merged    = list(dict.fromkeys(user_tags + ai_tags))  # preserve order, deduplicate
+        tags_str  = ", ".join(merged)
 
         tags_list = [t.strip() for t in tags_str.split(",") if t.strip()]
 

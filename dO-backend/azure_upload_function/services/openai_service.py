@@ -215,11 +215,31 @@ JSON response:"""
             parsed = json.loads(raw)
             if isinstance(parsed, dict) and "type" in parsed:
                 logging.info("Structured response type: %s", parsed.get("type"))
+                # Ensure answer field is never a raw JSON string
+                if isinstance(parsed.get("answer"), str) and parsed["answer"].strip().startswith("{"):
+                    try:
+                        inner = json.loads(parsed["answer"])
+                        if isinstance(inner, dict) and "type" in inner:
+                            return inner
+                    except Exception:
+                        pass
                 return parsed
         except (json.JSONDecodeError, ValueError):
-            pass
+            # Try to extract JSON from within the raw string (model may have added text around it)
+            json_match = re.search(r'\{.*\}', raw, re.DOTALL)
+            if json_match:
+                try:
+                    parsed = json.loads(json_match.group())
+                    if isinstance(parsed, dict) and "type" in parsed:
+                        logging.info("Extracted JSON from raw response: type=%s", parsed.get("type"))
+                        return parsed
+                except Exception:
+                    pass
 
-        # Fallback: wrap plain text in standard envelope
+        # Fallback: wrap plain text in standard envelope (never wrap JSON strings)
+        if raw.strip().startswith("{") or raw.strip().startswith("["):
+            # Raw is JSON but couldn't be parsed cleanly — return as text with note
+            return {"type": "text", "answer": "I found data but couldn't format it properly. Please try rephrasing your question."}
         return {"type": "text", "answer": raw}
 
     except Exception as exc:
