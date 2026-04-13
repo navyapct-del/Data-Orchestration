@@ -44,7 +44,8 @@ class TableService:
     # INSERT — status starts as "processing"
     # ------------------------------------------------------------------
 
-    def insert_entity(self, filename: str, blob_url: str, description: str, tags: str) -> str:
+    def insert_entity(self, filename: str, blob_url: str, description: str, tags: str,
+                      temp: bool = False, session_id: str = "") -> str:
         row_key = str(uuid.uuid4())
         entity  = {
             "PartitionKey":   PARTITION_KEY,
@@ -59,10 +60,12 @@ class TableService:
             "status":         "processing",
             "schema_version": SCHEMA_VERSION,
             "created_at":     datetime.now(timezone.utc).isoformat(),
+            "temp":           temp,
+            "session_id":     session_id[:100] if session_id else "",
         }
         try:
             self._client.create_entity(entity=entity)
-            logging.info("Table insert: RowKey=%s filename=%s", row_key, filename)
+            logging.info("Table insert: RowKey=%s filename=%s temp=%s", row_key, filename, temp)
         except Exception:
             logging.exception("Table insert failed for filename=%s", filename)
             raise

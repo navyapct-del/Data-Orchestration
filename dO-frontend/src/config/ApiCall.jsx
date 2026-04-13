@@ -131,7 +131,7 @@ export const checkHealth = async () => {
 };
 
 export const deleteDocument = async (id) => {
-  const response = await fetch(`${API_BASE}/document/${id}`, {
+  const response = await fetch(`${API_BASE}/document?id=${id}`, {
     method: "DELETE",
   });
   if (!response.ok) {
@@ -149,3 +149,4 @@ export const createKendraIndex    = async () => ({ message: "Not applicable with
 export const getKendraStatus      = async () => ({ message: "Not applicable with Azure backend." });
 export const getStepFunctionStatus = async () => ({ message: "Not applicable with Azure backend." });
 export const deleteKendraIndex    = async () => ({ message: "Not applicable with Azure backend." });
+

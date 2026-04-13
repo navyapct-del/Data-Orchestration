@@ -79,9 +79,14 @@ class BlobService:
             logging.info("Container '%s' not found — creating.", name)
             self._client.create_container(name)
 
-    def upload(self, filename: str, data: bytes, content_type: str) -> str:
-        """Upload raw file bytes → returns blob URL."""
-        blob_name   = f"{uuid.uuid4().hex}_{filename}"
+    def upload(self, filename: str, data: bytes, content_type: str, blob_name: str = "") -> str:
+        """Upload raw file bytes → returns blob URL.
+        
+        If blob_name is provided, it is used as-is (for temp uploads with custom prefix).
+        Otherwise, a UUID prefix is prepended to filename to prevent collisions.
+        """
+        if not blob_name:
+            blob_name = f"{uuid.uuid4().hex}_{filename}"
         blob_client = self._client.get_blob_client(container=CONTAINER_NAME, blob=blob_name)
         blob_client.upload_blob(
             data,

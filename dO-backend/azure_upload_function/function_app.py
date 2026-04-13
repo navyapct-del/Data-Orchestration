@@ -3,6 +3,7 @@ import logging
 import json
 import time
 import os
+import uuid
 
 try:
     from services.config import log_config_status, require_env
@@ -267,10 +268,30 @@ def upload(req: func.HttpRequest) -> func.HttpResponse:
         filename    = req.form.get("filename") or file.filename
         description = req.form.get("description", "")
         tags_input  = req.form.get("tags", "")
+        temp_flag   = req.form.get("temp", "false").lower() == "true"
+        session_id  = req.form.get("session_id", "")
 
         if not filename:
             return func.HttpResponse(json.dumps({"error": "filename is required."}),
                                      status_code=400, mimetype="application/json")
+
+        # ── File type validation ───────────────────────────────────────────
+        ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "application/pdf", "text/csv"}
+        ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "pdf", "csv"}
+
+        content_type = (file.content_type or "").lower().split(";")[0].strip()
+        file_ext     = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+        if content_type not in ALLOWED_MIME_TYPES and file_ext not in ALLOWED_EXTENSIONS:
+            return func.HttpResponse(
+                json.dumps({"error": "Unsupported file type. Allowed: jpg, jpeg, png, pdf, csv."}),
+                status_code=400, mimetype="application/json")
+
+        # ── Temp upload validation ─────────────────────────────────────────
+        if temp_flag and not session_id:
+            return func.HttpResponse(
+                json.dumps({"error": "session_id is required for temporary uploads."}),
+                status_code=400, mimetype="application/json")
 
         file_bytes = file.read()
 
@@ -283,13 +304,20 @@ def upload(req: func.HttpRequest) -> func.HttpResponse:
 
         # ── 1. Blob Storage ───────────────────────────────────────────────
         blob_svc = BlobService()
+        # Use temp prefix when temp flag is set
+        if temp_flag:
+            custom_blob_name = f"temp/{session_id}/{uuid.uuid4().hex}_{filename}"
+        else:
+            custom_blob_name = ""  # BlobService will generate UUID prefix
         blob_url = blob_svc.upload(filename, file_bytes,
-                                   file.content_type or "application/octet-stream")
+                                   file.content_type or "application/octet-stream",
+                                   blob_name=custom_blob_name)
         logging.info("Blob uploaded: %s", blob_url)
 
         # ── 2. Table Storage placeholder (status=processing) ──────────────
         table_svc = TableService()
-        record_id = table_svc.insert_entity(filename, blob_url, description, tags_input)
+        record_id = table_svc.insert_entity(filename, blob_url, description, tags_input,
+                                            temp=temp_flag, session_id=session_id)
 
         # ── 3. Text extraction (universal — PDF, CSV, Excel, Word, TXT, Image) ──
         t0   = time.time()
@@ -319,10 +347,30 @@ def upload(req: func.HttpRequest) -> func.HttpResponse:
                     status_code=422, mimetype="application/json")
 
         # ── 4. OpenAI: summary + tags + embedding ─────────────────────────
-        t1        = time.time()
-        summary   = generate_summary(text)
-        tags_str  = tags_input or generate_tags(text)
+        t1 = time.time()
+
+        # generate_summary with error handling (Task 9.3)
+        try:
+            summary = generate_summary(text)
+            if not summary:
+                logging.warning("generate_summary returned empty for '%s'", filename)
+                summary = ""
+        except Exception as sum_exc:
+            logging.warning("generate_summary failed for '%s': %s — storing empty summary", filename, sum_exc)
+            summary = ""
+
+        # generate_tags with error handling (Task 9.3)
+        try:
+            tags_str = tags_input or generate_tags(text)
+            if not tags_str:
+                logging.warning("generate_tags returned empty for '%s'", filename)
+                tags_str = ""
+        except Exception as tag_exc:
+            logging.warning("generate_tags failed for '%s': %s — storing empty tags", filename, tag_exc)
+            tags_str = ""
+
         tags_list = [t.strip() for t in tags_str.split(",") if t.strip()]
+
         embedding = generate_embedding(text)
         logging.info("Summary+tags+embedding in %.2fs | Embedding size: %d",
                      time.time() - t1, len(embedding) if embedding else 0)
