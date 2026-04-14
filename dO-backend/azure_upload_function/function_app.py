@@ -711,56 +711,60 @@ def query(req: func.HttpRequest) -> func.HttpResponse:
                 rows         = engine_result.get("rows", [])
                 columns      = engine_result.get("columns", [])
 
-                # error — invalid / unknown columns
+                # error — invalid / unknown columns → fall through to RAG
                 if resp_type == "error":
-                    return func.HttpResponse(
-                        json.dumps({
-                            "type":              "error",
-                            "answer":            engine_result.get("answer", ""),
-                            "invalid_columns":   engine_result.get("invalid_columns", []),
-                            "available_columns": engine_result.get("available_columns", []),
-                            "suggestions":       engine_result.get("suggestions", []),
-                            "query":             user_query,
-                            "sources":           sources,
-                        }),
-                        status_code=200, mimetype="application/json")
+                    logging.info("Query engine returned error — falling through to RAG: %s",
+                                 engine_result.get("answer", ""))
+                    # Don't return error — fall through to RAG which knows the document content
+                    stored_sd = None  # force RAG fallback
 
-                # chart
-                if resp_type == "chart" and chart_config:
-                    # Recompute series + dual-axis from actual serialised rows
-                    x_key      = chart_config.get("xKey", "")
-                    axis_info  = detect_dual_axis_from_rows(rows, x_key)
-                    chart_config["series"]   = axis_info["series"]
-                    chart_config["dualAxis"] = axis_info["dual_axis"]
-                    if axis_info["dual_axis"]:
-                        chart_config["type"] = axis_info.get("chart_type", "composed")
-                    return func.HttpResponse(
-                        json.dumps({
-                            "type":         "chart",
-                            "answer":       engine_result.get("answer", ""),
-                            "data":         rows,
-                            "chart_config": chart_config,
-                            "script":       engine_result.get("script", ""),
-                            "query":        user_query,
-                            "sources":      sources,
-                        }),
-                        status_code=200, mimetype="application/json")
+                # empty result → fall through to RAG
+                elif not rows and resp_type != "text":
+                    logging.info("Query engine returned 0 rows — falling through to RAG")
+                    stored_sd = None  # force RAG fallback
 
-                # table
-                if resp_type == "table" or (rows and len(rows) > 1):
-                    return func.HttpResponse(
-                        json.dumps({
-                            "type":    "table",
-                            "answer":  engine_result.get("answer", ""),
-                            "columns": columns,
-                            "rows":    rows,
-                            "script":  engine_result.get("script", ""),
-                            "query":   user_query,
-                            "sources": sources,
-                        }),
-                        status_code=200, mimetype="application/json")
+        if stored_sd and engine_result:
+            resp_type    = engine_result.get("type", "text")
+            chart_config = engine_result.get("chart_config")
+            rows         = engine_result.get("rows", [])
+            columns      = engine_result.get("columns", [])
 
-                # text / scalar
+            # chart
+            if resp_type == "chart" and chart_config:
+                x_key      = chart_config.get("xKey", "")
+                axis_info  = detect_dual_axis_from_rows(rows, x_key)
+                chart_config["series"]   = axis_info["series"]
+                chart_config["dualAxis"] = axis_info["dual_axis"]
+                if axis_info["dual_axis"]:
+                    chart_config["type"] = axis_info.get("chart_type", "composed")
+                return func.HttpResponse(
+                    json.dumps({
+                        "type":         "chart",
+                        "answer":       engine_result.get("answer", ""),
+                        "data":         rows,
+                        "chart_config": chart_config,
+                        "script":       engine_result.get("script", ""),
+                        "query":        user_query,
+                        "sources":      sources,
+                    }),
+                    status_code=200, mimetype="application/json")
+
+            # table with actual rows
+            if resp_type == "table" and rows:
+                return func.HttpResponse(
+                    json.dumps({
+                        "type":    "table",
+                        "answer":  engine_result.get("answer", ""),
+                        "columns": columns,
+                        "rows":    rows,
+                        "script":  engine_result.get("script", ""),
+                        "query":   user_query,
+                        "sources": sources,
+                    }),
+                    status_code=200, mimetype="application/json")
+
+            # text / scalar with actual content
+            if resp_type == "text" and engine_result.get("answer"):
                 return func.HttpResponse(
                     json.dumps({
                         "type":    "text",
