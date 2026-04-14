@@ -163,38 +163,24 @@ def generate_rag_answer(query: str, docs: list[dict]) -> dict:
     safe_prompt = f"""You are a precise data analyst assistant. Answer the question using ONLY the documents below.
 
 CRITICAL RULES:
-1. If the question asks for a chart, graph, plot, or visualization — you MUST return type "chart" with extracted data.
-2. If the question asks to compare, count, or show numbers — extract ALL relevant numbers from the documents.
-3. If the question asks for a table or list — return type "table".
-4. For text questions — return type "text".
-5. NEVER say "The documents do not contain specific information" for chart/count/compare queries — always extract what you can find.
-6. Respond with ONLY valid JSON — no markdown, no plain text outside JSON.
+1. You MUST respond with ONLY a single valid JSON object — no markdown, no plain text, no explanation outside the JSON.
+2. The JSON must be the ENTIRE response — do NOT wrap it in quotes or put it inside an "answer" field.
+3. If the question asks for a list, table, or guidelines — return type "table" with columns and rows.
+4. If the question asks for a chart, graph, or plot — return type "chart" with labels and values.
+5. For simple text answers — return type "text".
+6. NEVER truncate the JSON — include ALL rows/data.
 
-RESPONSE FORMATS:
-- Text answer  → {{"type":"text","answer":"..."}}
-- Table answer → {{"type":"table","columns":[...],"rows":[{{...}}],"answer":"..."}}
-- Chart answer → {{"type":"chart","chart_type":"bar","labels":["Label1","Label2"],"values":[10,20],"answer":"..."}}
+RESPONSE FORMATS (return EXACTLY one of these, nothing else):
+- Text:  {{"type":"text","answer":"your answer here"}}
+- Table: {{"type":"table","columns":["Col1","Col2"],"rows":[{{"Col1":"val","Col2":"val"}}],"answer":"optional summary"}}
+- Chart: {{"type":"chart","chart_type":"bar","labels":["A","B"],"values":[1,2],"answer":"optional summary"}}
 
-CHART EXTRACTION RULES:
-- For "plot X vs Y" or "compare X and Y" → extract counts/numbers for each category and return as chart
-- For "how many X" → count occurrences and return as chart if multiple categories exist
-- For "distribution of X" → extract all categories with their counts
-- chart_type: use "pie" if user says "pie chart", "line" if trend over time, otherwise "bar"
-- labels: array of category names (strings)
-- values: array of corresponding numbers (integers or floats)
-
-EXTRACTION APPROACH FOR PDFs:
-- Read through the document text carefully
-- Count items, sections, principles, guidelines, regulations, categories etc.
-- If you find a list of items, count them and use as chart data
-- If you find numbered sections, use section names as labels and counts as values
+IMPORTANT: Start your response with {{ and end with }}. No other text.
 
 Documents:
 {context}
 
-Question: {query}
-
-JSON response:"""
+Question: {query}"""
 
     deployment = _deployment()
     logging.info("Using model: %s | Prompt length: %d", deployment, len(safe_prompt))
@@ -204,7 +190,7 @@ JSON response:"""
             model    = deployment,
             messages = [{"role": "user", "content": safe_prompt.strip()}],
             temperature = 0.1,
-            max_tokens  = 1200,   # increased for chart data with multiple labels/values
+            max_tokens  = 4000,   # increased significantly — table responses with many rows need more tokens
         )
         raw = resp.choices[0].message.content.strip()
         # Strip markdown code fences if model wraps in ```json
