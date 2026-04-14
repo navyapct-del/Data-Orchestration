@@ -586,68 +586,6 @@ def documents(req: func.HttpRequest) -> func.HttpResponse:
 
 
 # ---------------------------------------------------------------------------
-# POST /cleanup-session — delete all temp blobs + table entries for a session
-# ---------------------------------------------------------------------------
-
-@app.route(route="cleanup-session", methods=["POST"])
-def cleanup_session(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info("POST /cleanup-session")
-    try:
-        body       = req.get_json()
-        session_id = body.get("session_id", "").strip()
-        if not session_id:
-            return func.HttpResponse(
-                json.dumps({"error": "session_id is required."}),
-                status_code=400, mimetype="application/json")
-
-        table_svc = TableService()
-        blob_svc  = BlobService()
-
-        # Find all temp entities for this session
-        from azure.data.tables import TableServiceClient
-        conn_str   = require_env("AZURE_STORAGE_CONNECTION_STRING")
-        raw_client = TableServiceClient.from_connection_string(conn_str).get_table_client("documentsmetadata")
-        entities   = list(raw_client.query_entities(
-            query_filter=f"PartitionKey eq 'documents' and session_id eq '{session_id}'"
-        ))
-
-        deleted_blobs = 0
-        deleted_rows  = 0
-
-        for e in entities:
-            # Delete blob
-            blob_url = e.get("blob_url", "")
-            if blob_url:
-                try:
-                    from azure.storage.blob import BlobClient
-                    bc = BlobClient.from_blob_url(
-                        blob_url   = blob_url,
-                        credential = blob_svc._client.credential,
-                    )
-                    bc.delete_blob()
-                    deleted_blobs += 1
-                except Exception as blob_exc:
-                    logging.warning("cleanup-session: blob delete failed for %s: %s", blob_url, blob_exc)
-
-            # Delete table row
-            try:
-                raw_client.delete_entity(partition_key=e["PartitionKey"], row_key=e["RowKey"])
-                deleted_rows += 1
-            except Exception as row_exc:
-                logging.warning("cleanup-session: row delete failed: %s", row_exc)
-
-        logging.info("cleanup-session: session=%s blobs=%d rows=%d", session_id, deleted_blobs, deleted_rows)
-        return func.HttpResponse(
-            json.dumps({"message": "Session cleaned up.", "deleted_blobs": deleted_blobs, "deleted_rows": deleted_rows}),
-            status_code=200, mimetype="application/json")
-
-    except Exception as exc:
-        logging.exception("cleanup-session error.")
-        return func.HttpResponse(json.dumps({"error": str(exc)}),
-                                 status_code=500, mimetype="application/json")
-
-
-# ---------------------------------------------------------------------------
 # GET /diagnose — raw Table Storage state for debugging
 # ---------------------------------------------------------------------------
 
