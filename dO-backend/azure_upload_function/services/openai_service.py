@@ -211,30 +211,35 @@ JSON response:"""
         raw = re.sub(r"^```(?:json)?\s*", "", raw)
         raw = re.sub(r"\s*```$", "", raw).strip()
 
-        try:
-            parsed = json.loads(raw)
-            if isinstance(parsed, dict) and "type" in parsed:
-                logging.info("Structured response type: %s", parsed.get("type"))
-                # Ensure answer field is never a raw JSON string
-                if isinstance(parsed.get("answer"), str) and parsed["answer"].strip().startswith("{"):
-                    try:
-                        inner = json.loads(parsed["answer"])
-                        if isinstance(inner, dict) and "type" in inner:
-                            return inner
-                    except Exception:
-                        pass
-                return parsed
-        except (json.JSONDecodeError, ValueError):
-            # Try to extract JSON from within the raw string (model may have added text around it)
-            json_match = re.search(r'\{.*\}', raw, re.DOTALL)
-            if json_match:
+        # Try to find JSON anywhere in the response (model sometimes adds preamble text)
+        def _extract_json(s: str) -> dict | None:
+            # Try direct parse first
+            try:
+                p = json.loads(s)
+                if isinstance(p, dict) and "type" in p:
+                    return p
+            except Exception:
+                pass
+            # Try finding first { ... } block
+            match = re.search(r'\{[\s\S]*\}', s)
+            if match:
                 try:
-                    parsed = json.loads(json_match.group())
-                    if isinstance(parsed, dict) and "type" in parsed:
-                        logging.info("Extracted JSON from raw response: type=%s", parsed.get("type"))
-                        return parsed
+                    p = json.loads(match.group())
+                    if isinstance(p, dict) and "type" in p:
+                        return p
                 except Exception:
                     pass
+            return None
+
+        parsed = _extract_json(raw)
+        if parsed:
+            logging.info("Structured response type: %s", parsed.get("type"))
+            # If answer field is itself a JSON string, unwrap it
+            if isinstance(parsed.get("answer"), str):
+                inner = _extract_json(parsed["answer"])
+                if inner:
+                    return inner
+            return parsed
 
         # Fallback: return as plain text answer
         return {"type": "text", "answer": raw}
