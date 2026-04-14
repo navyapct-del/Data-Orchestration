@@ -160,22 +160,27 @@ def generate_rag_answer(query: str, docs: list[dict]) -> dict:
 
     context = ("\n\n".join(context_parts))[:10000]   # increased to give LLM full document context for counting/extraction
 
-    safe_prompt = f"""You are a precise data analyst assistant. Answer the question using ONLY the documents below.
+    safe_prompt = f"""You are a precise assistant. Answer the question using ONLY the information in the documents below.
 
-CRITICAL RULES:
-1. You MUST respond with ONLY a single valid JSON object — no markdown, no plain text, no explanation outside the JSON.
-2. The JSON must be the ENTIRE response — do NOT wrap it in quotes or put it inside an "answer" field.
-3. If the question asks for a list, table, or guidelines — return type "table" with columns and rows.
-4. If the question asks for a chart, graph, or plot — return type "chart" with labels and values.
-5. For simple text answers — return type "text".
-6. NEVER truncate the JSON — include ALL rows/data.
+RULES:
+1. Respond with ONLY a single valid JSON object — no markdown, no text outside the JSON.
+2. Start your response with {{ and end with }}.
+3. NEVER fabricate, invent, or hallucinate data. Only use what is explicitly in the documents.
+4. If the answer is not in the documents, return: {{"type":"text","answer":"The documents do not contain specific information about this."}}
 
-RESPONSE FORMATS (return EXACTLY one of these, nothing else):
-- Text:  {{"type":"text","answer":"your answer here"}}
-- Table: {{"type":"table","columns":["Col1","Col2"],"rows":[{{"Col1":"val","Col2":"val"}}],"answer":"optional summary"}}
-- Chart: {{"type":"chart","chart_type":"bar","labels":["A","B"],"values":[1,2],"answer":"optional summary"}}
+RESPONSE FORMATS:
+- Text answer:  {{"type":"text","answer":"your answer here"}}
+- Table answer: {{"type":"table","columns":["Col1","Col2"],"rows":[{{"Col1":"val","Col2":"val"}}],"answer":"optional summary"}}
+- Chart answer: {{"type":"chart","chart_type":"bar","labels":["A","B"],"values":[1,2],"answer":"optional summary"}}
 
-IMPORTANT: Start your response with {{ and end with }}. No other text.
+WHEN TO USE EACH FORMAT:
+- Use "table" when the question asks to list, enumerate, or show multiple items with attributes (e.g. "list all guidelines", "show all regulations")
+- Use "chart" ONLY when the question explicitly asks for a graph, chart, plot, or visualization AND you have actual numeric data from the document
+- Use "text" for all other questions
+
+FOR TABLE RESPONSES:
+- Include ALL items found in the document — do not summarize or truncate
+- Use the exact names/values from the document text
 
 Documents:
 {context}
