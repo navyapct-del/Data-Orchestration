@@ -729,12 +729,17 @@ def query(req: func.HttpRequest) -> func.HttpResponse:
             if not columns:
                 return False
             q_lower = query.lower()
-            q_words = set(re.findall(r"[a-z]+", q_lower))
+            # Extract words from query (simple split, no regex needed)
+            q_words = set(w.strip(".,!?;:") for w in q_lower.split() if len(w) > 2)
             for col in columns:
-                col_words = set(re.findall(r"[a-z]+", col.lower()))
-                if q_words & col_words:  # any overlap between query words and column words
+                col_lower = col.lower()
+                col_words = set(w.strip(".,!?;:") for w in col_lower.split() if len(w) > 2)
+                if q_words & col_words:
                     return True
-            # Also check if query mentions the filename
+                # Also check if any query word appears in the column name
+                for qw in q_words:
+                    if qw in col_lower:
+                        return True
             return False
 
         for doc in docs:
