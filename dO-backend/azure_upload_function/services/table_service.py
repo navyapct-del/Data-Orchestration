@@ -404,6 +404,21 @@ class TableService:
             logging.exception("get_docs_missing_embeddings failed.")
             return []
 
+    def find_by_filename(self, filename: str) -> dict | None:
+        """Return the first entity matching the given filename, or None."""
+        try:
+            entities = list(self._client.query_entities(
+                query_filter=f"PartitionKey eq '{PARTITION_KEY}' and filename eq '{filename}'",
+                select=["RowKey", "filename", "status", "temp"],
+            ))
+            for e in entities:
+                if not e.get("temp", False):
+                    return {"id": e.get("RowKey", ""), "filename": e.get("filename", ""), "status": e.get("status", "")}
+            return None
+        except Exception as exc:
+            logging.error("find_by_filename failed for '%s': %s", filename, exc)
+            return None
+
     def delete_session_documents(self, session_id: str) -> int:
         """Delete all temp entities for a given session_id. Returns count deleted."""
         try:

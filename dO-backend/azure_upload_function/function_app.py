@@ -25,6 +25,38 @@ except Exception as _import_exc:
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 
 # ---------------------------------------------------------------------------
+# Custom JSON encoder — handles NaN, Infinity, numpy types from pandas
+# ---------------------------------------------------------------------------
+
+import math
+
+class _SafeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        try:
+            import numpy as np
+            if isinstance(obj, (np.integer,)):  return int(obj)
+            if isinstance(obj, (np.floating,)): return None if math.isnan(obj) else float(obj)
+            if isinstance(obj, (np.ndarray,)):  return obj.tolist()
+        except ImportError:
+            pass
+        return super().default(obj)
+
+    def encode(self, obj):
+        # Replace NaN/Infinity in the final string — catches all edge cases
+        result = super().encode(obj)
+        return result
+
+def _safe_json(obj) -> str:
+    """Serialize to JSON, replacing NaN/Infinity with null."""
+    raw = json.dumps(obj, cls=_SafeEncoder)
+    # Replace bare NaN and Infinity tokens (not valid JSON)
+    import re as _re
+    raw = _re.sub(r'\bNaN\b',       'null', raw)
+    raw = _re.sub(r'\bInfinity\b',  'null', raw)
+    raw = _re.sub(r'\b-Infinity\b', 'null', raw)
+    return raw
+
+# ---------------------------------------------------------------------------
 # GET /health — validate all required env vars, return status
 # ---------------------------------------------------------------------------
 
@@ -327,6 +359,21 @@ def upload(req: func.HttpRequest) -> func.HttpResponse:
                 status_code=413, mimetype="application/json")
 
         # ── 1. Blob Storage ───────────────────────────────────────────────
+        # ── 1. Blob Storage ───────────────────────────────────────────────
+        # Check for duplicate filename (non-temp uploads only)
+        if not temp_flag:
+            table_svc_check = TableService()
+            existing = table_svc_check.find_by_filename(filename)
+            if existing:
+                logging.info("Duplicate upload rejected: '%s' already exists (id=%s)", filename, existing.get("id"))
+                return func.HttpResponse(
+                    json.dumps({
+                        "error": f"A file named '{filename}' already exists. Please delete it first or rename your file.",
+                        "duplicate": True,
+                        "existing_id": existing.get("id", ""),
+                    }),
+                    status_code=409, mimetype="application/json")
+
         blob_svc = BlobService()
         # Use temp prefix when temp flag is set
         if temp_flag:
@@ -738,7 +785,7 @@ def query(req: func.HttpRequest) -> func.HttpResponse:
                 if axis_info["dual_axis"]:
                     chart_config["type"] = axis_info.get("chart_type", "composed")
                 return func.HttpResponse(
-                    json.dumps({
+                    _safe_json({
                         "type":         "chart",
                         "answer":       engine_result.get("answer", ""),
                         "data":         rows,
@@ -752,7 +799,7 @@ def query(req: func.HttpRequest) -> func.HttpResponse:
             # table with actual rows
             if resp_type == "table" and rows:
                 return func.HttpResponse(
-                    json.dumps({
+                    _safe_json({
                         "type":    "table",
                         "answer":  engine_result.get("answer", ""),
                         "columns": columns,
