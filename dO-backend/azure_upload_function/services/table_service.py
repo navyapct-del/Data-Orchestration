@@ -404,7 +404,21 @@ class TableService:
             logging.exception("get_docs_missing_embeddings failed.")
             return []
 
-    def patch_embedding(self, partition_key: str, row_key: str, embedding: list[float]) -> None:
+    def delete_session_documents(self, session_id: str) -> int:
+        """Delete all temp entities for a given session_id. Returns count deleted."""
+        try:
+            entities = list(self._client.query_entities(
+                query_filter=f"PartitionKey eq '{PARTITION_KEY}' and session_id eq '{session_id}'"
+            ))
+            count = 0
+            for e in entities:
+                self._client.delete_entity(partition_key=e["PartitionKey"], row_key=e["RowKey"])
+                count += 1
+            logging.info("delete_session_documents: deleted %d entities for session=%s", count, session_id)
+            return count
+        except Exception as exc:
+            logging.error("delete_session_documents failed: %s", exc)
+            return 0
         """Patch a single entity with its embedding by RowKey."""
         self._client.update_entity(entity={
             "PartitionKey": partition_key,
@@ -421,7 +435,7 @@ class TableService:
         try:
             entities = list(self._client.query_entities(
                 query_filter=f"PartitionKey eq '{PARTITION_KEY}'",
-                select=["RowKey", "filename", "summary", "tags", "blob_url", "status", "created_at"],
+                select=["RowKey", "filename", "summary", "tags", "blob_url", "status", "created_at", "temp"],
             ))
             docs = [{
                 "id":         e.get("RowKey", ""),
@@ -431,7 +445,8 @@ class TableService:
                 "blob_url":   e.get("blob_url", ""),
                 "status":     e.get("status", "processing"),
                 "created_at": e.get("created_at", ""),
-            } for e in entities]
+            } for e in entities
+              if not e.get("temp", False)]   # exclude temp uploads from Files Knowledge Bot
             docs.sort(key=lambda d: d["created_at"], reverse=True)
             logging.info("list_documents: %d docs in %.3fs", len(docs), time.time() - t0)
             return docs
