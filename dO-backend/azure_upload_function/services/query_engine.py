@@ -530,7 +530,7 @@ def execute_plan(df: pd.DataFrame, plan: dict) -> dict:
                 "type":         resp_type,
                 "answer":       f"Comparison across {len(rows)} groups.",
                 "columns":      list(result_df.columns),
-                "rows":         rows[:500],
+                "rows":         rows[:20],
                 "chart_config": chart_config,
                 "script":       script,
             }
@@ -655,7 +655,7 @@ def execute_plan(df: pd.DataFrame, plan: dict) -> dict:
             "type":         resp_type,
             "answer":       answer,
             "columns":      columns,
-            "rows":         rows[:500],   # hard cap for response size
+            "rows":         rows[:20],   # hard cap for response size
             "chart_config": chart_config,
             "script":       script,
         }

@@ -719,14 +719,45 @@ def query(req: func.HttpRequest) -> func.HttpResponse:
         ]
 
         # ── Try query engine on structured data first (works for ALL query types) ──
+        # Only use query engine if the structured data columns are relevant to the query
         table_svc = TableService()
         stored_sd = None
+        stored_sd_filename = None
+
+        def _columns_relevant_to_query(query: str, columns: list) -> bool:
+            """Check if any column name is semantically related to the query."""
+            if not columns:
+                return False
+            q_lower = query.lower()
+            q_words = set(re.findall(r"[a-z]+", q_lower))
+            for col in columns:
+                col_words = set(re.findall(r"[a-z]+", col.lower()))
+                if q_words & col_words:  # any overlap between query words and column words
+                    return True
+            # Also check if query mentions the filename
+            return False
+
         for doc in docs:
             sd = table_svc.get_structured_data(doc["filename"])
             if sd:
-                stored_sd = sd
-                logging.info("Found structured data for '%s'", doc["filename"])
-                break
+                # Get columns from structured data
+                sd_columns = sd.get("columns", [])
+                if not sd_columns and sd.get("sheets"):
+                    for sheet_data in sd["sheets"].values():
+                        sd_columns = sheet_data.get("columns", [])
+                        if sd_columns:
+                            break
+
+                # Only use this structured data if columns are relevant to the query
+                if _columns_relevant_to_query(user_query, sd_columns):
+                    stored_sd = sd
+                    stored_sd_filename = doc["filename"]
+                    logging.info("Found relevant structured data for '%s' (columns: %s)",
+                                 doc["filename"], sd_columns[:5])
+                    break
+                else:
+                    logging.info("Skipping structured data for '%s' — columns not relevant to query (columns: %s)",
+                                 doc["filename"], sd_columns[:5])
             else:
                 # Stale schema — inline reprocess from Blob
                 logging.info("Stale schema for '%s' — attempting inline reprocess", doc["filename"])
@@ -743,10 +774,13 @@ def query(req: func.HttpRequest) -> func.HttpResponse:
                     file_bytes = bc.download_blob().readall()
                     _, sd_r    = extract_with_structured(file_bytes, doc["filename"])
                     if sd_r:
-                        table_svc.update_ai_fields(doc["filename"], "", "", "", structured_data=sd_r)
-                        stored_sd = sd_r
-                        logging.info("Inline reprocess succeeded for '%s'", doc["filename"])
-                        break
+                        sd_columns = sd_r.get("columns", [])
+                        if _columns_relevant_to_query(user_query, sd_columns):
+                            table_svc.update_ai_fields(doc["filename"], "", "", "", structured_data=sd_r)
+                            stored_sd = sd_r
+                            stored_sd_filename = doc["filename"]
+                            logging.info("Inline reprocess succeeded for '%s'", doc["filename"])
+                            break
                 except Exception as rp_exc:
                     logging.warning("Inline reprocess failed for '%s': %s", doc["filename"], rp_exc)
 
